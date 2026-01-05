@@ -26,6 +26,7 @@ openai_client = OpenAIClient(
     config.request_timeout,
     api_version=config.azure_api_version,
     custom_headers=custom_headers,
+    ssl_verify=config.ssl_verify,
 )
 
 async def validate_api_key(x_api_key: Optional[str] = Header(None), authorization: Optional[str] = Header(None)):
@@ -209,6 +210,13 @@ async def test_connection():
                 ],
             },
         )
+
+
+@router.post("/api/event_logging/batch")
+async def event_logging():
+    """Handle Claude Code telemetry/analytics requests (no-op)"""
+    # Claude Code sends analytics data here - we just acknowledge it
+    return {"status": "ok"}
 
 
 @router.get("/")

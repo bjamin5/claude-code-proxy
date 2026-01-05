@@ -5,14 +5,19 @@ from typing import Optional, AsyncGenerator, Dict, Any
 from openai import AsyncOpenAI, AsyncAzureOpenAI
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from openai._exceptions import APIError, RateLimitError, AuthenticationError, BadRequestError
+import logging
+import httpx
+
+logger = logging.getLogger(__name__)
 
 class OpenAIClient:
     """Async OpenAI client with cancellation support."""
-    
-    def __init__(self, api_key: str, base_url: str, timeout: int = 90, api_version: Optional[str] = None, custom_headers: Optional[Dict[str, str]] = None):
+
+    def __init__(self, api_key: str, base_url: str, timeout: int = 90, api_version: Optional[str] = None, custom_headers: Optional[Dict[str, str]] = None, ssl_verify: bool = True):
         self.api_key = api_key
         self.base_url = base_url
         self.custom_headers = custom_headers or {}
+        self.ssl_verify = ssl_verify
         
         # Prepare default headers
         default_headers = {
@@ -22,7 +27,13 @@ class OpenAIClient:
         
         # Merge custom headers with default headers
         all_headers = {**default_headers, **self.custom_headers}
-        
+
+        # Create HTTP client with configurable SSL verification
+        # When ssl_verify=False, allows connections to APIs with self-signed certificates
+        http_client = httpx.AsyncClient(verify=self.ssl_verify)
+        if not self.ssl_verify:
+            logger.warning("SSL verification is DISABLED - only use this with trusted APIs")
+
         # Detect if using Azure and instantiate the appropriate client
         if api_version:
             self.client = AsyncAzureOpenAI(
@@ -30,20 +41,42 @@ class OpenAIClient:
                 azure_endpoint=base_url,
                 api_version=api_version,
                 timeout=timeout,
-                default_headers=all_headers
+                default_headers=all_headers,
+                http_client=http_client
             )
         else:
             self.client = AsyncOpenAI(
                 api_key=api_key,
                 base_url=base_url,
                 timeout=timeout,
-                default_headers=all_headers
+                default_headers=all_headers,
+                http_client=http_client
             )
         self.active_requests: Dict[str, asyncio.Event] = {}
     
     async def create_chat_completion(self, request: Dict[str, Any], request_id: Optional[str] = None) -> Dict[str, Any]:
         """Send chat completion to OpenAI API with cancellation support."""
-        
+
+        # Log the request details
+        logger.info(f"=== OpenAI API Request ===")
+        logger.info(f"Base URL: {self.base_url}")
+        logger.info(f"Model: {request.get('model', 'N/A')}")
+        logger.info(f"Max Tokens: {request.get('max_tokens', 'N/A')}")
+        logger.info(f"Messages Count: {len(request.get('messages', []))}")
+
+        # Log sanitized headers
+        sanitized_headers = {k: ('***' if k.lower() in ['authorization', 'api-key'] else v)
+                            for k, v in self.custom_headers.items()}
+        logger.info(f"Custom Headers: {sanitized_headers}")
+
+        # Log first message for context
+        if request.get('messages'):
+            first_msg = request['messages'][0]
+            logger.info(f"First Message Role: {first_msg.get('role', 'N/A')}")
+            content = first_msg.get('content', '')
+            if isinstance(content, str):
+                logger.info(f"First Message Content (truncated): {content[:100]}...")
+
         # Create cancellation token if request_id provided
         if request_id:
             cancel_event = asyncio.Event()
@@ -81,18 +114,46 @@ class OpenAIClient:
                 completion = await completion_task
             
             # Convert to dict format that matches the original interface
+            logger.info(f"=== OpenAI API Response Success ===")
             return completion.model_dump()
-        
+
         except AuthenticationError as e:
+            logger.error(f"=== Authentication Error ===")
+            logger.error(f"Error Type: AuthenticationError")
+            logger.error(f"Error Message: {str(e)}")
+            logger.error(f"Error Details: {repr(e)}")
             raise HTTPException(status_code=401, detail=self.classify_openai_error(str(e)))
         except RateLimitError as e:
+            logger.error(f"=== Rate Limit Error ===")
+            logger.error(f"Error Message: {str(e)}")
             raise HTTPException(status_code=429, detail=self.classify_openai_error(str(e)))
         except BadRequestError as e:
+            logger.error(f"=== Bad Request Error ===")
+            logger.error(f"Error Message: {str(e)}")
+            logger.error(f"Error Details: {repr(e)}")
             raise HTTPException(status_code=400, detail=self.classify_openai_error(str(e)))
         except APIError as e:
+            logger.error(f"=== API Error ===")
+            logger.error(f"Error Type: {type(e).__name__}")
+            logger.error(f"Error Message: {str(e)}")
+            logger.error(f"Error Details: {repr(e)}")
+            logger.error(f"Status Code: {getattr(e, 'status_code', 'N/A')}")
+            logger.error(f"Response Body: {getattr(e, 'body', 'N/A')}")
+            logger.error(f"Response: {getattr(e, 'response', 'N/A')}")
+
+            # Log the underlying cause if available
+            if hasattr(e, '__cause__') and e.__cause__:
+                logger.error(f"Underlying Cause: {type(e.__cause__).__name__}: {str(e.__cause__)}")
+
             status_code = getattr(e, 'status_code', 500)
             raise HTTPException(status_code=status_code, detail=self.classify_openai_error(str(e)))
         except Exception as e:
+            logger.error(f"=== Unexpected Error ===")
+            logger.error(f"Error Type: {type(e).__name__}")
+            logger.error(f"Error Message: {str(e)}")
+            logger.error(f"Error Details: {repr(e)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
         
         finally:

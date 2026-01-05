@@ -24,7 +24,11 @@ class Config:
         # Connection settings
         self.request_timeout = int(os.environ.get("REQUEST_TIMEOUT", "90"))
         self.max_retries = int(os.environ.get("MAX_RETRIES", "2"))
-        
+
+        # SSL Verification setting
+        ssl_verify_str = os.environ.get("SSL_VERIFY", "true").lower()
+        self.ssl_verify = ssl_verify_str not in ['false', '0', 'no', 'off']
+
         # Model settings - BIG and SMALL models
         self.big_model = os.environ.get("BIG_MODEL", "gpt-4o")
         self.middle_model = os.environ.get("MIDDLE_MODEL", self.big_model)
