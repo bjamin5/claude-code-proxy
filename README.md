@@ -48,7 +48,10 @@ ANTHROPIC_BASE_URL=http://localhost:8082 ANTHROPIC_API_KEY="left-blank-on-purpos
 ### 4. Start Server
 
 ```bash
-# Using Python (recommended)
+# Using Docker (recommended)
+docker run -p 8082:8082 --env-file .env claude-code-proxy
+
+# Or using Python
 python start_proxy.py
 
 # Or with UV
