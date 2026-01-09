@@ -41,8 +41,16 @@ cp .env.example .env
 export ANTHROPIC_BASE_URL=http://localhost:8082
 export ANTHROPIC_API_KEY="left-blank-on-purpose"
 
-# Or run this inline when you run claude code
+OR
+
+# run this inline when you run claude code
 ANTHROPIC_BASE_URL=http://localhost:8082 ANTHROPIC_API_KEY="left-blank-on-purpose" claude
+
+#####
+
+**Required:**
+
+export OPENAI_API_KEY= - Your Albus API key for the target provider (set in shell environment instead of .env)
 ```
 
 ### 4. Start Server
